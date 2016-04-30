@@ -1,0 +1,16 @@
+#!/bin/sh
+
+: ${BACKUP_PG_SERVICE:=postgres}
+: ${BACKUP_PG_CONTAINER:=${BACKUP_PG_SERVICE}-1}
+
+: ${POSTGRES_USER:=postgres}
+: ${POSTGRES_DBS:=$(docker-cloud exec $BACKUP_PG_CONTAINER psql -U $POSTGRES_USER -l -t | awk '{ print $1}' | grep -vE '\||^\s*$|^template')}
+: ${PGDATA:=$(docker-cloud service env ls $BACKUP_PG_SERVICE | grep PGDATA | awk '{ print $3 }')}
+
+docker-cloud exec $BACKUP_PG_CONTAINER mkdir -p $PGDATA/backups
+
+for db in $POSTGRES_DBS; do
+    echo -n "[`date`] Backing up postgres database $db... "
+    docker-cloud exec $BACKUP_PG_CONTAINER pg_dump -U $POSTGRES_USER -F c -b -f $PGDATA/backups/$db-$(date +%u).backup $db
+    echo "Done"
+done

@@ -1,0 +1,29 @@
+#!/bin/sh
+
+set -e
+
+: ${BACKUP_MY_SERVICE:=mysql}
+: ${BACKUP_MY_CONTAINER:=${BACKUP_MY_SERVICE}-1}
+
+: ${MYSQL_ROOT_PASSWORD:=$(docker-cloud service env ls $BACKUP_MY_SERVICE | grep MYSQL_ROOT_PASSWORD | awk '{ print $3 }')}
+: ${MYSQL_DBS:=$(docker-cloud exec $BACKUP_MY_CONTAINER mysql -u root -p$MYSQL_ROOT_PASSWORD -Bse 'show databases' | xargs)}
+: ${MYSQL_DBS_EXCLUDE:=information_schema performance_schema mysql backups}
+: ${MYDATA:=/var/lib/mysql}
+
+docker-cloud exec $BACKUP_MY_CONTAINER mkdir -p $MYDATA/backups
+
+for db in $MYSQL_DBS; do
+    skipdb=-1
+
+    if [ "$MYSQL_DBS_EXCLUDE" != "" ]; then
+        for i in $MYSQL_DBS_EXCLUDE; do
+            [ "$db" == "$i" ] && skipdb=1 || :
+        done
+    fi
+
+    if [ "$skipdb" == "-1" ]; then
+        echo -n "[`date`] Backing up mysql database $db... "
+        docker-cloud exec $BACKUP_MY_CONTAINER sh -c "mysqldump -u root -p$MYSQL_ROOT_PASSWORD $db | gzip > $MYDATA/backups/$db-$(date +%u).sql.gz"
+        echo "Done"
+    fi
+done
